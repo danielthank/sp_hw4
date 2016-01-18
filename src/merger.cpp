@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <string.h>
 
-#define MAXN 50000000
+#define MAXN 60000000
 #define min(a, b) ((a)<(b)?(a):(b))
 
 int n, array[MAXN];
