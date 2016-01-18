@@ -1,0 +1,96 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[margin=3cm]{geometry}
+\usepackage{graphicx}
+\usepackage{xeCJK}
+\usepackage{indentfirst}
+\usepackage[square,numbers]{natbib}
+\usepackage{multirow}
+\bibliographystyle{humannat}
+\setcitestyle{authoryear,aysep={},notesep={：},open={（},close={）}}
+\setCJKmainfont{Songti TC} 
+\setCJKfamilyfont{weibei}{Weibei TC}
+\setCJKfamilyfont{longsong}{CSong3HK}
+\setCJKfamilyfont{heiti}{Heiti TC}
+\setCJKfamilyfont{lantinghei}{Lantinghei TC}
+\setCJKfamilyfont{kaiti}{Kaiti TC}
+
+\newcommand{\weibei}[1]{{\CJKfamily{weibei}#1}}
+\newcommand{\longsong}[1]{{\CJKfamily{longsong}#1}}
+\newcommand{\heiti}[1]{{\CJKfamily{heiti}#1}}
+\newcommand{\lantinghei}[1]{{\CJKfamily{lantinghei}#1}}
+\newcommand{\kaiti}[1]{{\CJKfamily{kaiti}#1}}
+
+\renewcommand*\contentsname{目錄}
+
+\linespread{1.15}
+\setlength{\parskip}{1em}
+\setlength{\parindent}{2.5em}
+
+\title{System Programming\\Programing Assignment 4 Report}
+\author{電機三\ 金延儒}
+
+\begin{document}
+\maketitle
+\section{測試}
+測試講求的是準確，為了使測出來的時間更準確，我大概有以下幾個方面的改進。
+
+首先是輸出的部分，一開始是把本來程式的output重導到/dev/null，但後來發現，即使導到/dev/null，依舊會多耗掉一些時間在user time。讓我們看看測資$n=5\times 10^7$時兩種的差別。其中箭頭代表時間隨著thread數的增加而增加（$\nearrow$）、減少（$\searrow$）或持平（$\rightarrow$）。
+
+\begin{center}
+\begin{tabular}{l | l l r r r r r r}
+\hline
+(sec)& \multicolumn{2}{|l}{\# of threads} & 1 & 2 & 5 & 10 & 25 & 100 \\ \hline
+\multirow{3}{*}{Delete output}
+& real & $\searrow$ & 20.212 & 13.734 & 11.912 & 11.786 & 11.672 & 11.734 \\ \cline{2-9}
+& user & $\rightarrow$ & 20.070 & 20.192 & 20.338 & 20.240 & 20.068 & 19.982 \\ \cline{2-9}
+& sys & $\nearrow$ & 0.150 & 0.130 & 0.162 & 0.188 & 0.220 & 0.366 \\ \hline\hline
+\multirow{3}{*}{To /dev/null}
+& real & $\nearrow$ & 27.230 & 25.018 & 28.216 & 31.180 & 35.326 & 42.784 \\ \cline{2-9}
+& user & $\nearrow$ & 27.078 & 30.944 & 37.132 & 40.962 & 45.812 & 53.208 \\ \cline{2-9}
+& sys & $\nearrow$ & 0.168 & 0.192 & 0.254 & 0.282 & 0.440 & 0.840 \\
+\hline
+\end{tabular}
+\end{center}
+
+拿redirect to /dev/null 跟delete output 相比，我們可以觀察到system time雖然有增加，但是非常不顯著，最主要是user time部分的增加，又如果這部分增加的user time是可以平行化的，那麼均攤下來可能不會差非常多。但不幸的是，我們可以看到terminal輸出無法平行化，所以這會使得real time急遽增加，甚至原本因為threading帶來的效益也沒了。也就是說：在要輸出過程的情況中，threading在時間上的花費反而會更差，主因在於其中輸出的難以平行化。
+
+再來是測資產生，餵給主程式的部分，如果我們將主程式的測資輸出到一個檔案裡面，測試時再由主程式直接去讀取那個檔案，這樣會造成一個問題：檔案在讀寫是要trap into system，會多花一些system time，並且大幅減少效率。這個的解決方法很簡單，就是把產生測資的程式直接pipe給merger，這樣子直接在記憶體之間傳送可以大幅降低IO的時間。
+
+再接下來，若我們用系統的time指令來計算時間，我們只能知道包括亂數產生以及排序的real, user, system time，並無法知道個別的資訊。為了要能夠準確亂數產生以及排序個別的資訊，最好的方法是另外自己寫一支測試，然後在每筆測資就fork出一個process來跑主程式，而測試程式除了可以用來更準確的偵測child所花的時間，更可以控制流程、紀錄統計資料，是一個比較適當的方法。
+
+另外，為了使測出來的時間更具有可信度，在同一個資料量，同一個thread數下，我也用不一樣的測資去跑，最後加總平均。這同樣也是可以用自己另外寫的程式完成的。
+
+\section{結果}
+以上是我在測試程式上的改進，而對結果造成影響的討論，接下來討論不同測資大小及thread數目下，平行化的merge sort執行的時間結果。（這是把ouput去掉，然後每筆跑五次的加總平均）
+\begin{center}
+\begin{tabular}{l | l l r r r r r r}
+\hline
+(sec)& \multicolumn{2}{|l}{\# of threads} & 1 & 2 & 5 & 10 & 25 & 100 \\ \hline
+\multirow{5}{*}{Real time}
+& $n=10^2$ & $\rightarrow$ & 0.000 & 0.002 & 0.000 & 0.000 & 0.004 & 0.004 \\ \cline{2-9}
+& $n=10^4$ & $\rightarrow$ & 0.004 & 0.002 & 0.004 & 0.006 & 0.002 & 0.008 \\ \cline{2-9}
+& $n=10^6$ & $\searrow$ & 0.346 & 0.244 & 0.226 & 0.222 & 0.224 & 0.220 \\ \cline{2-9}
+& $n=10^7$ & $\searrow$ & 3.800 & 2.634 & 2.310 & 2.286 & 2.264 & 2.278 \\ \cline{2-9}
+& $n=5\times10^7$ & $\searrow$ & 20.212 & 13.734 & 11.912 & 11.786 & 11.672 & 11.734 \\
+\hline\hline
+\multirow{5}{*}{User time}
+& $n=10^2$ & $\rightarrow$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\ \cline{2-9}
+& $n=10^4$ & $\rightarrow$ & 0.004 & 0.004 & 0.002 & 0.000 & 0.006 & 0.002 \\ \cline{2-9}
+& $n=10^6$ & $\rightarrow$ & 0.340 & 0.344 & 0.344 & 0.336 & 0.338 & 0.326 \\ \cline{2-9}
+& $n=10^7$ & $\rightarrow$ & 3.782 & 3.790 & 3.808 & 3.784 & 3.748 & 3.786 \\ \cline{2-9}
+& $n=5\times10^7$ & $\rightarrow$ & 20.070 & 20.192 & 20.338 & 20.240 & 20.068 & 19.882 \\
+\hline\hline
+\multirow{5}{*}{Sys time}
+& $n=10^2$ & $\rightarrow$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\ \cline{2-9}
+& $n=10^4$ & $\rightarrow$ & 0.002 & 0.000 & 0.002 & 0.002 & 0.002 & 0.002 \\ \cline{2-9}
+& $n=10^6$ & $\rightarrow$ & 0.004 & 0.002 & 0.002 & 0.012 & 0.008 & 0.008 \\ \cline{2-9}
+& $n=10^7$ & $\nearrow$ & 0.022 & 0.036 & 0.034 & 0.052 & 0.060 & 0.072 \\ \cline{2-9}
+& $n=5\times10^7$ & $\nearrow$ & 0.150 & 0.130 & 0.162 & 0.188 & 0.220 & 0.366 \\
+\hline
+\end{tabular}
+\end{center}
+
+首先我們可以觀察到，在thread為1時，也就是完全沒有平行話時，總時間大概就是user time + system time。而在user time以及system time之中，很明顯地，user time佔了顯著的地位。也因此，即使在n比較大，system time隨著thread數而增加時，real time依舊不會有明顯的增加，反而會因為user time分配在不同處理器下而有更好的表現。
+
+此外，我們可以看到雖然整體而言，實際執行時間隨著thread的增加而減少，但是當thread數太多，例如100時，執行時間反而沒有25來得好，我想，最主要的原因就是system time的增加。雖然效率的降低並不是十分顯著，但是這依舊是可以再仔細考慮，並且trade-off的關鍵。
+\end{document}
